@@ -1,52 +1,70 @@
 # client.py
 """
-Client with Vector Clock Propagation
-------------------------------------
+Assignment: Implementing Vector Clocks for Causal Tracking
+----------------------------------------------------------
 This client:
 1. Maintains its own vector clock
-2. Before sending request: increments its clock
-3. Sends clock + payload to server
-4. After response: merges server clock into its own
+2. Before sending request → increments local clock
+3. Attaches vector clock + payload in request
+4. After response → merges server's clock into local clock
 """
 
 import requests
+from datetime import datetime
 from vector_clock import VectorClock
 
-class Client:
-    def __init__(self, client_id, server_url):
-        self.client_id = client_id
-        self.server_url = server_url
-        self.vc = VectorClock(client_id)
+# Utility for timestamp
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def send(self, payload):
-        print(f"\n[CLIENT {self.client_id}] Before send: {self.vc.to_dict()}")
+# ---------- Client Setup ----------
+CLIENT_ID = "A"   # you can make B, C, etc. for multiple clients
+client_vc = VectorClock(CLIENT_ID)
 
-        # Step 1: increment before sending
-        self.vc.increment(self.client_id)
-        print(f"[CLIENT {self.client_id}] After increment: {self.vc.to_dict()}")
+# Change this URL according to deployment
+SERVER_URL = "http://127.0.0.1:8080/rpc"
+# Example for Railway after deploy:
+# SERVER_URL = "https://your-app-name.up.railway.app/rpc"
 
-        # Step 2: send request to server
-        response = requests.post(
-            f"{self.server_url}/rpc",
-            json={"node_id": self.client_id, "clock": self.vc.to_dict(), "payload": payload}
-        )
+# ---------- Function: send request ----------
+def send_request(payload):
+    print(f"\n[{now()}] [CLIENT {CLIENT_ID}] 📤 Preparing request...")
 
-        server_data = response.json()
-        server_clock = server_data["server_clock"]
+    # Step 1: Increment local clock
+    client_vc.increment(CLIENT_ID)
+    print(f"[{now()}] [CLIENT {CLIENT_ID}] ⏱ Local clock after increment: {client_vc.to_dict()}")
 
-        print(f"[CLIENT {self.client_id}] Received from server: {server_clock}")
+    # Step 2: Create JSON payload
+    data = {
+        "node_id": CLIENT_ID,
+        "clock": client_vc.to_dict(),
+        "payload": payload
+    }
 
-        # Step 3: merge server clock
-        self.vc.update(server_clock)
-        print(f"[CLIENT {self.client_id}] After merge: {self.vc.to_dict()}")
+    # Step 3: Send POST request
+    try:
+        response = requests.post(SERVER_URL, json=data)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"[{now()}] [CLIENT {CLIENT_ID}] ❌ Error contacting server: {e}")
+        return
 
-        return server_data
+    # Step 4: Parse server response
+    server_data = response.json()
+    server_clock = server_data.get("server_clock", {})
+    print(f"[{now()}] [CLIENT {CLIENT_ID}] 📩 Response received from server")
+    print(f"    Server VC : {server_clock}")
+    print(f"    Payload   : {server_data.get('payload_echo')}")
+    print(f"    Timestamp : {server_data.get('timestamp')}")
 
+    # Step 5: Merge server’s clock into client’s clock
+    client_vc.update(server_clock)
+    print(f"[{now()}] [CLIENT {CLIENT_ID}] 🔄 Updated local clock after merge: {client_vc.to_dict()}")
+
+# ---------- Main ----------
 if __name__ == "__main__":
-    # Example demo
-    SERVER_URL = "http://127.0.0.1:8080"  # Local testing, change for Railway
-    clientA = Client("A", SERVER_URL)
+    print(f"🚀 Client {CLIENT_ID} started. Target server: {SERVER_URL}")
 
-    # Send multiple requests
-    clientA.send("Hello from A - 1")
-    clientA.send("Hello from A - 2")
+    # Example interactions
+    send_request("Hello from Client A (1st request)")
+    send_request("Another message from Client A (2nd request)")
