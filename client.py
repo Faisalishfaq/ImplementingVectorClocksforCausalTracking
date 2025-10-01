@@ -1,42 +1,52 @@
 # client.py
+"""
+Client with Vector Clock Propagation
+------------------------------------
+This client:
+1. Maintains its own vector clock
+2. Before sending request: increments its clock
+3. Sends clock + payload to server
+4. After response: merges server clock into its own
+"""
+
 import requests
-import json
 from vector_clock import VectorClock
-import sys
-import os
 
-def run_client(node_id, server_url="http://127.0.0.1:5000/rpc"):
-    clock_file = f"vc_{node_id}.json"
+class Client:
+    def __init__(self, client_id, server_url):
+        self.client_id = client_id
+        self.server_url = server_url
+        self.vc = VectorClock(client_id)
 
-    if os.path.exists(clock_file):
-        with open(clock_file, "r") as f:
-            clock_data = json.load(f)
-    else:
-        clock_data = {}
+    def send(self, payload):
+        print(f"\n[CLIENT {self.client_id}] Before send: {self.vc.to_dict()}")
 
-    vc = VectorClock(node_id=node_id, clock=clock_data)
+        # Step 1: increment before sending
+        self.vc.increment(self.client_id)
+        print(f"[CLIENT {self.client_id}] After increment: {self.vc.to_dict()}")
 
-    print(f"[CLIENT {node_id}] Before send:", vc.to_dict())
-    vc.increment(node_id)
-    print(f"[CLIENT {node_id}] After increment:", vc.to_dict())
+        # Step 2: send request to server
+        response = requests.post(
+            f"{self.server_url}/rpc",
+            json={"node_id": self.client_id, "clock": self.vc.to_dict(), "payload": payload}
+        )
 
-    payload = {"node_id": node_id, "clock": vc.to_dict(), "payload": f"hello from {node_id}"}
-    response = requests.post(server_url, json=payload)
+        server_data = response.json()
+        server_clock = server_data["server_clock"]
 
-    if response.status_code == 200:
-        resp_data = response.json()
-        print(f"[CLIENT {node_id}] Server response:", resp_data)
+        print(f"[CLIENT {self.client_id}] Received from server: {server_clock}")
 
-        vc.update(resp_data["clock"])
-        print(f"[CLIENT {node_id}] After merge:", vc.to_dict())
+        # Step 3: merge server clock
+        self.vc.update(server_clock)
+        print(f"[CLIENT {self.client_id}] After merge: {self.vc.to_dict()}")
 
-        with open(clock_file, "w") as f:
-            json.dump(vc.to_dict(), f)
-    else:
-        print(f"[CLIENT {node_id}] Error:", response.text)
+        return server_data
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python client.py <NodeID>")
-    else:
-        run_client(sys.argv[1])
+    # Example demo
+    SERVER_URL = "http://127.0.0.1:8080"  # Local testing, change for Railway
+    clientA = Client("A", SERVER_URL)
+
+    # Send multiple requests
+    clientA.send("Hello from A - 1")
+    clientA.send("Hello from A - 2")
