@@ -1,38 +1,54 @@
 # vector_clock.py
+"""
+Vector Clock Implementation
+---------------------------
+This module provides a VectorClock class which supports:
+1. increment(node_id) – increment local counter
+2. update(other_clock) – merge with another vector clock
+3. compare(other_clock) – determine happens-before, concurrent, or equal
+"""
 
 class VectorClock:
-    def __init__(self, node_id=None, clock=None):
+    def __init__(self, node_id):
         self.node_id = node_id
-        self.clock = dict(clock) if clock else {}
+        self.clock = {node_id: 0}
 
     def increment(self, node_id=None):
-        nid = node_id or self.node_id
-        if nid is None:
-            raise ValueError("node_id required to increment")
-        self.clock[nid] = self.clock.get(nid, 0) + 1
-        return self.clock
+        """Increment local counter (default: this node)."""
+        if node_id is None:
+            node_id = self.node_id
+        self.clock[node_id] = self.clock.get(node_id, 0) + 1
 
-    def update(self, other):
-        other_clock = other.clock if isinstance(other, VectorClock) else other
-        for k, v in (other_clock or {}).items():
-            self.clock[k] = max(self.clock.get(k, 0), v)
-        return self.clock
+    def update(self, other_clock):
+        """Merge this vector clock with another one."""
+        for node, value in other_clock.items():
+            self.clock[node] = max(self.clock.get(node, 0), value)
 
-    def compare(self, other):
-        other_clock = other.clock if isinstance(other, VectorClock) else other or {}
-        keys = set(self.clock.keys()) | set(other_clock.keys())
-        less = greater = False
-        for k in keys:
-            a, b = self.clock.get(k, 0), other_clock.get(k, 0)
-            if a < b: less = True
-            elif a > b: greater = True
-        if not less and not greater: return "equal"
-        if less and not greater: return "happens-before"
-        if greater and not less: return "happens-after"
-        return "concurrent"
+    def compare(self, other_clock):
+        """
+        Compare this vector clock with another.
+        Returns: "happens-before (→)", "happens-after (←)", "concurrent (‖)", or "equal (=)"
+        """
+        less, greater = False, False
+        for node in set(self.clock) | set(other_clock):
+            self_val = self.clock.get(node, 0)
+            other_val = other_clock.get(node, 0)
+            if self_val < other_val:
+                less = True
+            elif self_val > other_val:
+                greater = True
+
+        if less and not greater:
+            return "happens-before (→)"
+        elif greater and not less:
+            return "happens-after (←)"
+        elif greater and less:
+            return "concurrent (‖)"
+        else:
+            return "equal (=)"
 
     def to_dict(self):
         return dict(self.clock)
 
     def __repr__(self):
-        return f"VectorClock({self.clock})"
+        return str(self.clock)
